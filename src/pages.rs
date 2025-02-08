@@ -95,7 +95,7 @@ pub async fn flight_details(
                                     &format!("{number}*{date}"),
                                     // Caches only the start, to ensure compatability
                                     serde_json::to_string(&json[0]).unwrap(),
-                                    3600,
+                                    86400,
                                 )
                                 .await
                                 .unwrap();
