@@ -4,7 +4,7 @@ use redis::AsyncCommands;
 use reqwest::{header, redirect};
 use serde::{Serialize, Deserialize};
 use axum::{extract::{Path, State}, Json};
-use crate::{FlightContracts, RequestError, Environment};
+use crate::{{FlightContracts, RequestError, Environment}, flight_contract::FlightContract};
 
 // This represents the health of the aerodatabox api 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,8 +61,8 @@ pub async fn flight_details(
 
     match cached_flight {
         Some(flight) => {
-            let json: FlightContracts = serde_json::from_str(&flight).unwrap();
-            return Ok(Json(json))
+            let json: FlightContract = serde_json::from_str(&flight).unwrap();
+            return Ok(Json(vec![json])) // To ensure compatability with client, the result is put into a vec
         }
         None => {
             let request_string = format!(
@@ -87,7 +87,21 @@ pub async fn flight_details(
                 Ok(val) => {
                     // Checks whether the server response can be parsed
                     match val.json::<FlightContracts>().await {
-                        Ok(json) => return Ok(Json(json)),
+                        Ok(json) => {
+
+                            // Caches result of API to redis
+                            conn
+                                .set_ex::<&str, String, Option<String>>(
+                                    &format!("{number}*{date}"),
+                                    // Caches only the start, to ensure compatability
+                                    serde_json::to_string(&json[0]).unwrap(),
+                                    3600,
+                                )
+                                .await
+                                .unwrap();
+
+                            return Ok(Json(json))
+                        },
                         Err(_) => return Err(
                             Json(RequestError { // JSON Parsing error, invalid 
                                 message: String::from("Could not parse server response")
