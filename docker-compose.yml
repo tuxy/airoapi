@@ -2,16 +2,24 @@ services:
   cache:
     image: redis:7-alpine
     restart: always
-  api:
+  caddy:
+    image: caddy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - 127.0.0.1:80:80
+      - 127.0.0.1:443:443
+  api01:
     image: airoapi
     restart: always
+    hostname: api01
     ports:
-      - 8080:8080
+      - 8080
     environment:
       # All required fields
-      ENDPOINT: <ENDPOINT> # e.g. "https://api.magicapi.dev/api/v1/aedbx/aerodatabox"
-      API_KEY: <API_KEY>
-      REDIS_HOST: cache
+      ENDPOINT:  # e.g. "https://api.magicapi.dev/api/v1/aedbx/aerodatabox"
+      API_KEY: 
+      REDIS_HOST: cache # The name of the redis cache container 
       REDIS_PORT: 6379
-    depends_on: 
+    depends_on:
       - cache
