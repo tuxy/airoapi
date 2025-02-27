@@ -1,12 +1,19 @@
+use crate::{
+    flight_contract::FlightContract,
+    {Environment, FlightContracts, RequestError},
+};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
+use log::warn;
 use redis::AsyncCommands;
 use reqwest::{header, redirect};
-use serde::{Serialize, Deserialize};
-use axum::{extract::{Path, State}, Json};
-use crate::{{FlightContracts, RequestError, Environment}, flight_contract::FlightContract};
+use serde::{Deserialize, Serialize};
 
-// This represents the health of the aerodatabox api 
+// This represents the health of the aerodatabox api
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServiceStatus {
     pub service: String,
@@ -26,31 +33,31 @@ pub async fn health_check(State(env): State<Environment>) -> String {
         .unwrap();
 
     // Sees if the client errors out
-    match client.get(url).headers(headers).send().await {
-        Ok(val) => {
-            match val.json::<ServiceStatus>().await {
-                Ok(json) => {
-                    return json.status
-                }
-                Err(_) => return String::from("API Down")
-            }
-        }
-        Err(_) => return String::from("Network Issue")
-    }
+    let status = match client.get(url).headers(headers).send().await {
+        Ok(val) => match val.json::<ServiceStatus>().await {
+            Ok(json) => json.status,
+            Err(_) => String::from("API Down"),
+        },
+        Err(_) => String::from("Network Issue"),
+    };
+
+    warn!("API currently unreachable: {status}");
+    status
 }
 
 // Might return a RequestError
 pub async fn flight_details(
-    State((env, pool)): State<(Environment, Pool<RedisConnectionManager>)>, 
-    Path((number, date)): Path<(String, String)>
+    State((env, pool)): State<(Environment, Pool<RedisConnectionManager>)>,
+    Path((number, date)): Path<(String, String)>,
 ) -> Result<Json<FlightContracts>, Json<RequestError>> {
     match is_date(&date).await {
         true => {} // If date is correct, continue
-        false => return Err(
-            Json(RequestError { // Network errors, etc
-                message: String::from("Invalid date provided")
-            })
-        )
+        false => {
+            return Err(Json(RequestError {
+                // Network errors, etc
+                message: String::from("Invalid date provided"),
+            }));
+        }
     }
 
     let mut conn = pool.get().await.unwrap();
@@ -62,58 +69,51 @@ pub async fn flight_details(
     match cached_flight {
         Some(flight) => {
             let json: FlightContract = serde_json::from_str(&flight).unwrap();
-            return Ok(Json(vec![json])) // To ensure compatability with client, the result is put into a vec
+            Ok(Json(vec![json])) // To ensure compatability with client, the result is put into a vec
         }
         None => {
-            let request_string = format!(
-                "{}/flights/number/{}/{}",
-                env.endpoint, number, date
-            ); // TODO add withAircraftImage true param and api_key
-        
+            let request_string = format!("{}/flights/number/{}/{}", env.endpoint, number, date); // TODO add withAircraftImage true param and api_key
+
             let mut headers = header::HeaderMap::new();
             headers.insert("x-magicapi-key", env.api_key.parse().unwrap());
-        
+
             let params = [("withAircraftImage", "true")];
-        
+
             let url = reqwest::Url::parse_with_params(&request_string, &params).unwrap();
-        
+
             let client = reqwest::Client::builder()
                 .redirect(redirect::Policy::none())
                 .build()
                 .unwrap();
-        
+
             // Returns either a successful response, or a RequestError JSON
             match client.get(url).headers(headers).send().await {
                 Ok(val) => {
                     // Checks whether the server response can be parsed
                     match val.json::<FlightContracts>().await {
                         Ok(json) => {
-
                             // Caches result of API to redis
-                            conn
-                                .set_ex::<&str, String, Option<String>>(
-                                    &format!("{number}*{date}"),
-                                    // Caches only the start, to ensure compatability
-                                    serde_json::to_string(&json[0]).unwrap(),
-                                    86400,
-                                )
-                                .await
-                                .unwrap();
+                            conn.set_ex::<&str, String, Option<String>>(
+                                &format!("{number}*{date}"),
+                                // Caches only the start, to ensure compatability
+                                serde_json::to_string(&json[0]).unwrap(),
+                                86400,
+                            )
+                            .await
+                            .unwrap();
 
-                            return Ok(Json(json))
-                        },
-                        Err(_) => return Err(
-                            Json(RequestError { // JSON Parsing error, invalid 
-                                message: String::from("Could not parse server response")
-                            })
-                        )
-                    };
+                            Ok(Json(json))
+                        }
+                        Err(_) => Err(Json(RequestError {
+                            // JSON Parsing error, invalid
+                            message: String::from("Could not parse server response"),
+                        })),
+                    }
                 }
-                Err(_) => return Err(
-                    Json(RequestError { // Network errors, etc
-                        message: String::from("Could not contact server")
-                    })
-                )
+                Err(_) => Err(Json(RequestError {
+                    // Network errors, etc
+                    message: String::from("Could not contact server"),
+                })),
             }
         }
     }
@@ -121,8 +121,7 @@ pub async fn flight_details(
 
 // Checks if date is somewhat valid
 async fn is_date(date: &str) -> bool {
-    let split_date = date.split("-")
-        .collect::<Vec<&str>>();
+    let split_date = date.split("-").collect::<Vec<&str>>();
 
     if split_date.len() != 3 {
         return false;
