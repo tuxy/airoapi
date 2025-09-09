@@ -10,7 +10,7 @@ use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
 use log::warn;
 use redis::AsyncCommands;
-use reqwest::{header, redirect};
+use reqwest::{header, redirect, StatusCode};
 use serde::{Deserialize, Serialize};
 
 // This represents the health of the aerodatabox api
@@ -72,7 +72,7 @@ pub async fn flight_details(
             Ok(Json(vec![json])) // To ensure compatability with client, the result is put into a vec
         }
         None => {
-            let request_string = format!("{}/flights/number/{}/{}", env.endpoint, number, date); // TODO add withAircraftImage true param and api_key
+            let request_string = format!("{}/flights/number/{}/{}", env.endpoint, number, date);
 
             let mut headers = header::HeaderMap::new();
             headers.insert("x-magicapi-key", env.api_key.parse().unwrap());
@@ -89,6 +89,17 @@ pub async fn flight_details(
             // Returns either a successful response, or a RequestError JSON
             match client.get(url).headers(headers).send().await {
                 Ok(val) => {
+                    // Server responds with no content
+                    if val.status() == StatusCode::NO_CONTENT {
+                        return Err(
+                            Json(
+                                RequestError {
+                                    message: String::from("No flight found")
+                                }
+                            )
+                        )
+                    }
+
                     // Checks whether the server response can be parsed
                     match val.json::<FlightContracts>().await {
                         Ok(json) => {
