@@ -1,3 +1,6 @@
+use core::time;
+use std::thread::sleep;
+
 use crate::{
     flight_contract::FlightContract,
     {Environment, FlightContracts, RequestError},
@@ -8,7 +11,7 @@ use axum::{
 };
 use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
-use log::warn;
+use log::{warn, error};
 use redis::AsyncCommands;
 use reqwest::{header, redirect, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -103,15 +106,36 @@ pub async fn flight_details(
                     // Checks whether the server response can be parsed
                     match val.json::<FlightContracts>().await {
                         Ok(json) => {
-                            // Caches result of API to redis
-                            conn.set_ex::<&str, String, Option<String>>(
-                                &format!("{number}*{date}"),
-                                // Caches only the start, to ensure compatability
-                                serde_json::to_string(&json[0]).unwrap(),
-                                86400,
-                            )
-                            .await
-                            .unwrap();
+                            let mut failure = true;
+                            let mut fail_count = 0;
+
+                            while failure {
+                                // Caches result of API to redis
+                                let conn_attempt = conn.set_ex::<&str, String, Option<String>>(
+                                    &format!("{number}*{date}"),
+                                    // Caches only the start, to ensure compatability
+                                    serde_json::to_string(&json[0]).unwrap(),
+                                    86400,
+                                )
+                                .await;
+                                
+                                // Do nothing if connection attempt works
+                                // If connection fails, reattempt after interval.
+                                match conn_attempt {
+                                    Ok(_) => { 
+                                        failure = false;
+                                     },
+                                    Err(_) => {
+                                        if fail_count > 5 {
+                                            error!("Could not connect to redis");
+                                            panic!();
+                                        }
+                                        warn!("Failed to connect to redis. Reattempting in .5 seconds");
+                                        sleep(time::Duration::from_millis(500));
+                                        fail_count += 1;
+                                    }
+                                }
+                            }
 
                             Ok(Json(json))
                         }
