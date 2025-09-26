@@ -1,6 +1,10 @@
 name: airoapi docker CI 
 on: 
-  pushjobs:
+  push:
+    branches: [ main ]
+    pull_request: 
+      branches [ main ]
+jobs:
   build_and_publish:
     runs-on: ubuntu-latest
     steps: 
