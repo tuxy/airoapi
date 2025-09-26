@@ -15,7 +15,7 @@ pub async fn init_conn(url: String) -> Pool<RedisConnectionManager> {
         let mut conn = pool.get().await.unwrap();
         conn.set::<&str, &str, ()>("foo", "bar").await.unwrap();
         let result: String = conn.get("foo").await.unwrap();
-        if result == "bar" {
+        if result != "bar" {
             error!("Redis check failed");
             panic!();
         }
