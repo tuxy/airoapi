@@ -1,3 +1,18 @@
 /target
 /data
 .env
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
+
+# workers & wrangler
+target
+node_modules
+.wrangler
