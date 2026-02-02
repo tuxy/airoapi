@@ -6,12 +6,12 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
     router
         // 1. Flight status (Cached for 60 minutes)
-        .get_async("/flights/number/*path", |req, ctx| async move {
+        .get_async("/flights/Number/*path", |req, ctx| async move {
             let path = ctx.param("path").unwrap();
             fetch_and_cache(req, &ctx.env, format!("/flights/number/{}", path), 3600).await
         })
         // 2. Everything else (No cache)
-        .get_async("/flights/airports/*path", |req, ctx| async move {
+        .get_async("/flights/Airports/*path", |req, ctx| async move {
             let path = ctx.param("path").unwrap();
             fetch_no_cache(req, &ctx.env, format!("/flights/airports/{}", path)).await
         })
