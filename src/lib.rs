@@ -44,12 +44,13 @@ async fn fetch_and_cache(req: Request, env: &Env, api_path: String, ttl: u32) ->
 
 async fn fetch_no_cache(_req: Request, env: &Env, api_path: String) -> Result<Response> {
     let target_url = format!(
-        "https://prod.api.market/api/v1/aedbx/aerodatabox{}",
+        "https://aerodatabox.p.rapidapi.com{}",
         api_path
     );
 
     let headers = Headers::new();
-    headers.set("x-magicapi-key", &env.var("AERODATABOX_KEY")?.to_string())?;
+    headers.set("x-rapidapi-key", &env.var("AERODATABOX_KEY")?.to_string())?;
+    headers.set("x-rapidapi-host", "aerodatabox.p.rapidapi.com"); 
 
     let mut init = RequestInit::new();
     init.with_method(Method::Get);
